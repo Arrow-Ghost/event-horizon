@@ -1,0 +1,9 @@
+node_modules
+dist
+.astro
+.phishguard/
+phishguard.config.json
+.claude/
+.env
+.env.*
+*.log

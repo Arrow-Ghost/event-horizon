@@ -1,0 +1,475 @@
+---
+import "@/styles/global.css";
+import ObservatorySection from "@/components/scenes/ObservatorySection";
+import PocketSection from "@/components/scenes/PocketSection";
+import pg from "virtual:phishguard/config";
+
+// Content-Security-Policy backstop for the PhishGuard runtime agent: even code
+// that grabbed `fetch` before the agent loaded cannot reach another host.
+const dev = import.meta.env.DEV;
+const csp = [
+  `connect-src 'self'${pg.enabled ? ` ${pg.hubs.join(" ")}` : ""}${dev ? " ws: wss:" : ""}`,
+  "font-src 'self' https://fonts.gstatic.com",
+  "img-src 'self' data: blob:",
+  "media-src 'self' blob:",
+  "worker-src 'self' blob:",
+  "object-src 'none'",
+  "frame-src 'none'",
+  "base-uri 'self'",
+  "form-action 'self'",
+].join("; ");
+
+const chapters = [
+  ["prologue", "Prologue"],
+  ["collapse", "Collapse"],
+  ["lensing", "Lensing"],
+  ["disk", "Accretion"],
+  ["observatory", "The Image"],
+  ["spaghetti", "Tides"],
+  ["time", "Time"],
+  ["scale", "Scale"],
+  ["pocket", "Pocket"],
+  ["dive", "Horizon"],
+  ["hawking", "Evaporation"],
+];
+
+const diskCards = [
+  {
+    n: "i",
+    title: "Doppler beaming",
+    body: "Gas on the approaching side races toward you at a third of light speed. Relativity piles its light up — one side of the disk blazes, the other dims to embers.",
+    stat: "0.3 c",
+    statLabel: "orbital velocity at the inner edge",
+  },
+  {
+    n: "ii",
+    title: "The bent halo",
+    body: "The disk is flat. You see its far side anyway — light from behind the hole is bent up and over the top, wrapping a halo around the shadow.",
+    stat: "180°",
+    statLabel: "of sky folded into one ring",
+  },
+  {
+    n: "iii",
+    title: "Photon sphere",
+    body: "At 1.5 Schwarzschild radii, light itself can orbit. Every photon ring you see is starlight that looped the hole before escaping to your eye.",
+    stat: "1.5 rₛ",
+    statLabel: "where light walks in circles",
+  },
+  {
+    n: "iv",
+    title: "Last stable orbit",
+    body: "Inside 3 rₛ there is no safe circle left. Matter crossing the ISCO stops orbiting and starts falling — the inner edge of the disk is a cliff.",
+    stat: "3 rₛ",
+    statLabel: "innermost stable circular orbit",
+  },
+  {
+    n: "v",
+    title: "Brighter than galaxies",
+    body: "Friction heats the gas to millions of degrees. Feeding black holes — quasars — outshine the hundred billion stars around them.",
+    stat: "10⁷ K",
+    statLabel: "x-ray hot plasma",
+  },
+];
+
+const scaleObjects = [
+  { name: "Earth", note: "if crushed into a black hole", rs: 8.87e-6 },
+  { name: "The Sun", note: "would fit inside a small town", rs: 2.95 },
+  { name: "Cygnus X-1", note: "first black hole ever confirmed", rs: 62 },
+  { name: "Sagittarius A*", note: "the heart of the Milky Way", rs: 1.27e7 },
+  { name: "M87*", note: "larger than our solar system", rs: 1.9e10 },
+  { name: "TON 618", note: "one of the largest known", rs: 1.95e11 },
+];
+const scaleRefs = [
+  { name: "Earth's orbit", rs: 1.496e8 },
+  { name: "Neptune's orbit", rs: 4.5e9 },
+];
+---
+
+<!doctype html>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Event Horizon — A descent into a black hole</title>
+    <meta name="description" content="An interactive, cinematic descent into a black hole, rendered in real time with general relativity." />
+    <meta name="theme-color" content="#030304" />
+    <meta http-equiv="Content-Security-Policy" content={csp} />
+    <!-- PhishGuard runtime agent: must run before every other script -->
+    <script>
+      import "@/security/phishguard-agent";
+    </script>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='13' fill='none' stroke='%23ffb36b' stroke-width='3'/><circle cx='16' cy='16' r='8' fill='black'/></svg>" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter+Tight:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body class="letterbox">
+    <canvas id="bh-canvas" aria-hidden="true"></canvas>
+    <div id="flash" class="pointer-events-none fixed inset-0 z-[58] bg-[#fff6ea] opacity-0" aria-hidden="true"></div>
+
+    <!-- ── preloader ─────────────────────────────────────────── -->
+    <div id="loader" class="fixed inset-0 z-[90] flex flex-col items-center justify-center bg-[#030304]">
+      <div class="relative h-40 w-40">
+        <svg viewBox="0 0 100 100" class="absolute inset-0 h-full w-full -rotate-90">
+          <circle cx="50" cy="50" r="46" fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="0.6"></circle>
+          <circle id="loader-arc" cx="50" cy="50" r="46" fill="none" stroke="#ffb36b" stroke-width="0.8" stroke-dasharray="289" stroke-dashoffset="289" stroke-linecap="round"></circle>
+        </svg>
+        <div class="absolute inset-0 grid place-items-center">
+          <span id="loader-count" class="font-display text-5xl tabular-nums text-[#ece6da]">000</span>
+        </div>
+      </div>
+      <p id="loader-label" class="eyebrow mt-10 text-[#ece6da]/50">Calibrating spacetime</p>
+      <p class="eyebrow absolute bottom-8 text-[#ece6da]/25">Best with sound · headphones</p>
+    </div>
+
+    <!-- ── cursor ─────────────────────────────────────────────── -->
+    <div class="cursor-ring" id="cursor-ring"><span id="cursor-label">view</span></div>
+    <div class="cursor-dot" id="cursor-dot"></div>
+
+    <!-- ── HUD ────────────────────────────────────────────────── -->
+    <header id="hud" class="pointer-events-none fixed inset-x-0 top-0 z-50 flex items-start justify-between p-5 opacity-0 md:p-8">
+      <a href="#top" data-scrollto="0" class="pointer-events-auto flex items-center gap-3" data-cursor="top">
+        <span class="relative grid h-7 w-7 place-items-center">
+          <span class="absolute inset-0 rounded-full border border-[#ffb36b]/70"></span>
+          <span class="h-3 w-3 rounded-full bg-black shadow-[0_0_12px_3px_rgba(255,179,107,0.7)]"></span>
+        </span>
+        <span class="eyebrow text-[#ece6da]/80">Event Horizon</span>
+      </a>
+      <div class="flex items-center gap-6">
+        <span id="hud-chapter" class="eyebrow hidden text-[#ece6da]/50 md:block">00 — Approach</span>
+        <button id="sound" class="pointer-events-auto flex items-center gap-2.5" data-cursor="sound" aria-pressed="false">
+          <span class="flex h-3 items-end gap-[2px]" aria-hidden="true">
+            <i class="sound-bar block h-full w-[2px] origin-bottom scale-y-[0.3] bg-[#ece6da]"></i>
+            <i class="sound-bar block h-full w-[2px] origin-bottom scale-y-[0.3] bg-[#ece6da]"></i>
+            <i class="sound-bar block h-full w-[2px] origin-bottom scale-y-[0.3] bg-[#ece6da]"></i>
+            <i class="sound-bar block h-full w-[2px] origin-bottom scale-y-[0.3] bg-[#ece6da]"></i>
+          </span>
+          <span id="sound-label" class="eyebrow text-[#ece6da]/70">Sound off</span>
+        </button>
+      </div>
+    </header>
+
+    <nav id="chapter-nav" class="fixed left-6 top-1/2 z-50 hidden -translate-y-1/2 flex-col gap-3 opacity-0 lg:flex" aria-label="Chapters">
+      {
+        chapters.map(([id, label], i) => (
+          <a href={`#${id}`} data-chapter={id} class="nav-item group flex items-center gap-3" data-cursor="jump">
+            <span class="nav-line block h-px w-4 bg-[#ece6da]/30 transition-all duration-500" />
+            <span class="eyebrow text-[0.58rem] text-[#ece6da]/0 transition-all duration-500 group-hover:text-[#ece6da]/70">
+              {String(i + 1).padStart(2, "0")} {label}
+            </span>
+          </a>
+        ))
+      }
+    </nav>
+
+    <div id="telemetry" class="pointer-events-none fixed bottom-0 inset-x-0 z-50 flex items-end justify-between p-5 font-mono text-[10px] uppercase tracking-[0.18em] text-[#ece6da]/45 opacity-0 md:p-8">
+      <div class="space-y-1">
+        <div>r <span class="text-[#ece6da]/85" id="t-r">26.00</span> rₛ</div>
+        <div class="hidden md:block">clock rate <span class="text-[#ece6da]/85" id="t-tau">0.981</span></div>
+        <div class="hidden md:block">escape v <span class="text-[#ece6da]/85" id="t-v">0.196</span> c</div>
+      </div>
+      <div class="hidden text-center md:block" id="hold-hint">hold anywhere to fall closer</div>
+      <div class="flex items-center gap-3">
+        <span id="t-pct">000</span>
+        <span class="relative block h-16 w-px overflow-hidden bg-[#ece6da]/15">
+          <span id="t-bar" class="absolute inset-x-0 top-0 block h-full origin-top scale-y-0 bg-[#ffb36b]"></span>
+        </span>
+      </div>
+    </div>
+
+    <main id="top">
+      <!-- ── HERO ─────────────────────────────────────────────── -->
+      <section id="hero" class="relative flex h-[100svh] min-h-[640px] flex-col items-center justify-center overflow-hidden px-6 text-center">
+        <p class="hero-eyebrow eyebrow mb-6 text-[#ffb36b]/90">An interactive descent · rendered with general relativity</p>
+        <h1 class="hero-title font-display text-[#ece6da]" style="font-size: clamp(4.5rem, 17vw, 17rem); line-height: 0.8; letter-spacing: -0.045em;">
+          <span class="split-line block"><span class="hero-word block">Event</span></span>
+          <span class="split-line block"><span class="hero-word block italic text-gradient pr-[0.05em]">Horizon</span></span>
+        </h1>
+        <p class="hero-sub lede mx-auto mt-8 text-center">
+          The point of no return. Not a surface, not a wall — just a line in spacetime beyond which every path, even light's, leads inward.
+        </p>
+        <div class="hero-cue absolute bottom-10 left-1/2 flex -translate-x-1/2 flex-col items-center gap-3">
+          <span class="eyebrow text-[#ece6da]/45">Scroll to fall</span>
+          <span class="relative block h-14 w-px overflow-hidden bg-[#ece6da]/15">
+            <span class="absolute left-0 top-0 block h-1/2 w-px animate-[float-y_2s_ease-in-out_infinite] bg-[#ffb36b]"></span>
+          </span>
+        </div>
+      </section>
+
+      <!-- ── 01 PROLOGUE ──────────────────────────────────────── -->
+      <section id="prologue" data-chapter-section="prologue" class="relative">
+        <div class="prologue-pin flex h-[100svh] items-center px-6 md:px-[12vw]">
+          <div class="max-w-[68rem]">
+            <p class="eyebrow mb-8 text-[#ffb36b]">Chapter 01 — Prologue</p>
+            <p class="prologue-text font-display text-[clamp(2rem,4.6vw,4.6rem)] leading-[1.06] text-[#ece6da]">
+              Somewhere in the dark there is a place where gravity wins every argument. Where light — the fastest thing there is — falls inward and never returns. Its edge has a name.{" "}
+              <em class="text-gradient">Let's go there.</em>
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── 02 COLLAPSE ──────────────────────────────────────── -->
+      <section id="collapse" data-chapter-section="collapse" class="relative">
+        <div class="collapse-pin relative h-[100svh] overflow-hidden">
+          <canvas id="collapse-canvas" class="absolute inset-0 h-full w-full"></canvas>
+          <div class="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_40%,rgba(3,3,4,0.85)_100%)]"></div>
+
+          <div class="absolute left-6 top-28 md:left-[8vw] md:top-[22vh]">
+            <p class="eyebrow text-[#ffb36b]">Chapter 02 — Collapse</p>
+            <div class="relative mt-6 h-[13rem] w-[min(34rem,85vw)]">
+              <div class="collapse-phase absolute inset-0" data-phase="0">
+                <h2 class="chapter-title text-[#ece6da]" style="font-size:clamp(2.6rem,6vw,6rem)">It begins<br /><em>with a star.</em></h2>
+                <p class="lede mt-5">Twenty times the mass of the Sun, swelling into a red supergiant as it burns the last of its fuel.</p>
+              </div>
+              <div class="collapse-phase absolute inset-0 opacity-0" data-phase="1">
+                <h2 class="chapter-title text-[#ece6da]" style="font-size:clamp(2.6rem,6vw,6rem)">The fire<br /><em>goes out.</em></h2>
+                <p class="lede mt-5">Its iron core can't fuse anymore. Pressure fails. In under a second the core falls in on itself at a quarter the speed of light.</p>
+              </div>
+              <div class="collapse-phase absolute inset-0 opacity-0" data-phase="2">
+                <h2 class="chapter-title text-[#ece6da]" style="font-size:clamp(2.6rem,6vw,6rem)">Supernova.</h2>
+                <p class="lede mt-5">The rebound tears the star apart. For a few weeks it outshines its entire galaxy.</p>
+              </div>
+              <div class="collapse-phase absolute inset-0 opacity-0" data-phase="3">
+                <h2 class="chapter-title text-[#ece6da]" style="font-size:clamp(2.6rem,6vw,6rem)">What remains<br /><em class="text-gradient">cannot leave.</em></h2>
+                <p class="lede mt-5">The core keeps falling, past every limit, until escape would need more than light speed. A black hole is born, and the debris begins to circle.</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="absolute bottom-24 right-6 w-56 space-y-4 font-mono text-[10px] uppercase tracking-[0.18em] text-[#ece6da]/50 md:bottom-[18vh] md:right-[8vw]">
+            <div>
+              <div class="flex justify-between"><span>Core radius</span><span id="c-radius" class="text-[#ece6da]">6,000 km</span></div>
+              <div class="mt-1.5 h-px bg-[#ece6da]/10"><div id="c-radius-bar" class="h-px origin-left bg-[#ffb36b]"></div></div>
+            </div>
+            <div>
+              <div class="flex justify-between"><span>Core temp</span><span id="c-temp" class="text-[#ece6da]">3.0 × 10⁹ K</span></div>
+              <div class="mt-1.5 h-px bg-[#ece6da]/10"><div id="c-temp-bar" class="h-px origin-left bg-[#ffb36b]"></div></div>
+            </div>
+            <div>
+              <div class="flex justify-between"><span>Escape velocity</span><span id="c-esc" class="text-[#ece6da]">0.02 c</span></div>
+              <div class="mt-1.5 h-px bg-[#ece6da]/10"><div id="c-esc-bar" class="h-px origin-left bg-[#ffb36b]"></div></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── 03 LENSING ───────────────────────────────────────── -->
+      <section id="lensing" data-chapter-section="lensing" class="relative">
+        <div class="lensing-pin flex h-[100svh] items-center px-6 md:px-[8vw]">
+          <div class="w-full max-w-[34rem]">
+            <p class="eyebrow text-[#ffb36b] reveal">Chapter 03 — Lensing</p>
+            <h2 class="chapter-title reveal-title mt-6 text-[#ece6da]">
+              <span class="split-line block"><span class="block">Gravity</span></span>
+              <span class="split-line block"><span class="block italic">bends light.</span></span>
+            </h2>
+            <p class="lede reveal mt-8">
+              Mass curves spacetime, and light has no choice but to follow the curve. Near a black hole the starfield behind it is smeared, doubled and folded into rings. Drag the slider — feel the mass.
+            </p>
+            <div class="glass reveal mt-10 rounded-2xl p-6" data-cursor="drag">
+              <div class="mb-4 flex items-baseline justify-between">
+                <span class="eyebrow text-[#ece6da]/50">Spacetime curvature</span>
+                <span class="font-display text-3xl italic text-[#ffd8ae]" id="mass-readout">100%</span>
+              </div>
+              <input id="mass" class="mass" type="range" min="0" max="160" value="100" aria-label="Spacetime curvature" />
+              <div class="mt-5 grid grid-cols-3 gap-3 font-mono text-[10px] uppercase tracking-[0.14em] text-[#ece6da]/45">
+                <div><div class="text-[#ece6da]/85" id="lens-shadow">5.20 rₛ</div>shadow ⌀</div>
+                <div><div class="text-[#ece6da]/85" id="lens-ring">1.50 rₛ</div>photon orbit</div>
+                <div><div class="text-[#ece6da]/85" id="lens-defl">∞</div>max bend</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── 04 ACCRETION DISK ────────────────────────────────── -->
+      <section id="disk" data-chapter-section="disk" class="relative">
+        <div class="disk-pin relative flex h-[100svh] flex-col justify-center overflow-hidden">
+          <div class="mb-10 flex items-end justify-between px-6 md:px-[8vw]">
+            <div>
+              <p class="eyebrow text-[#ffb36b]">Chapter 04 — Accretion</p>
+              <h2 data-reveal class="chapter-title mt-5 text-[#ece6da]" style="font-size:clamp(2.8rem,6.5vw,7rem)">A disk of <em class="text-gradient">fire</em></h2>
+            </div>
+            <div class="hidden font-mono text-[10px] uppercase tracking-[0.18em] text-[#ece6da]/40 md:block">
+              <span id="disk-idx">01</span> / 05
+            </div>
+          </div>
+          <div class="disk-track flex w-max gap-6 pl-6 pr-[30vw] md:gap-8 md:pl-[8vw]">
+            {
+              diskCards.map((c) => (
+                <article class="disk-card glass group bg-black/30 relative flex h-[min(56vh,30rem)] w-[min(82vw,26rem)] shrink-0 flex-col justify-between overflow-hidden rounded-[1.75rem] p-7 md:p-9" data-cursor="tilt">
+                  <div class="pointer-events-none absolute -right-24 -top-24 h-64 w-64 rounded-full bg-[radial-gradient(circle,rgba(255,179,107,0.25),transparent_70%)] opacity-0 transition-opacity duration-700 group-hover:opacity-100" />
+                  <div class="flex items-center justify-between">
+                    <span class="font-display text-2xl italic text-[#ffb36b]">{c.n}</span>
+                    <span class="h-px w-16 bg-[#ece6da]/20" />
+                  </div>
+                  <div>
+                    <h3 class="font-display text-4xl leading-none text-[#ece6da] md:text-5xl">{c.title}</h3>
+                    <p class="mt-5 text-[0.95rem] leading-relaxed text-[#ece6da]/60">{c.body}</p>
+                  </div>
+                  <div class="border-t border-white/10 pt-5">
+                    <div class="font-display text-5xl text-[#ffd8ae]">{c.stat}</div>
+                    <div class="eyebrow mt-2 text-[0.58rem] text-[#ece6da]/40">{c.statLabel}</div>
+                  </div>
+                </article>
+              ))
+            }
+          </div>
+        </div>
+      </section>
+
+      <!-- ── 05 OBSERVATORY (ContainerScroll) ─────────────────── -->
+      <section id="observatory" data-chapter-section="observatory" class="relative">
+        <ObservatorySection client:visible />
+      </section>
+
+      <!-- ── 06 SPAGHETTIFICATION ─────────────────────────────── -->
+      <section id="spaghetti" data-chapter-section="spaghetti" class="relative">
+        <div class="spaghetti-pin relative flex h-[100svh] flex-col items-center justify-center overflow-hidden px-4">
+          <p class="eyebrow mb-6 text-[#ffb36b]">Chapter 06 — Tides</p>
+          <h2 class="spaghetti-word font-display whitespace-nowrap text-[#ece6da]" style="font-size: clamp(2.2rem, 9.2vw, 10rem); line-height: 1; letter-spacing: -0.03em;">
+            Spaghettification
+          </h2>
+          <div class="relative mt-12 grid max-w-4xl gap-8 text-center md:grid-cols-[1fr_auto_1fr] md:items-center md:text-left">
+            <p class="lede spaghetti-copy">Fall in feet-first and gravity at your feet outpulls gravity at your head. The difference stretches you thinner and longer —</p>
+            <div class="mx-auto flex h-28 w-20 items-end justify-center gap-[3px]" aria-hidden="true">
+              <span class="tide-body block w-3 origin-bottom rounded-full bg-gradient-to-t from-[#ffb36b] to-[#ece6da]" style="height:40%"></span>
+            </div>
+            <div class="font-mono text-[10px] uppercase tracking-[0.18em] text-[#ece6da]/45">
+              <div>tidal stretch</div>
+              <div class="mt-1 font-display text-4xl normal-case tracking-normal text-[#ffd8ae]" id="tide-g">1 g</div>
+              <div class="mt-3">— like toothpaste from a tube.</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── 07 TIME ──────────────────────────────────────────── -->
+      <section id="time" data-chapter-section="time" class="relative">
+        <div class="time-pin relative flex h-[100svh] flex-col items-center justify-center px-6">
+          <div class="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(3,3,4,0.7)_20%,transparent_75%)]"></div>
+          <div class="relative text-center">
+            <p class="eyebrow text-[#ffb36b]">Chapter 07 — Time</p>
+            <h2 class="chapter-title mt-5 text-[#ece6da]" style="font-size:clamp(2.8rem,7vw,7.5rem)">Clocks <em>slow down.</em></h2>
+          </div>
+          <div class="relative mt-12 flex w-full max-w-5xl flex-col items-center justify-center gap-10 md:flex-row md:gap-24">
+            {
+              ["earth", "you"].map((who) => (
+                <div class="flex flex-col items-center">
+                  <svg viewBox="0 0 200 200" class="h-44 w-44 md:h-60 md:w-60">
+                    <circle cx="100" cy="100" r="92" fill="none" stroke="rgba(236,230,218,0.12)" stroke-width="0.6" />
+                    <circle id={`ring-${who}`} cx="100" cy="100" r="92" fill="none" stroke={who === "you" ? "#ffb36b" : "rgba(236,230,218,0.6)"} stroke-width="1.2" stroke-dasharray="578" stroke-dashoffset="578" transform="rotate(-90 100 100)" />
+                    {Array.from({ length: 60 }).map((_, i) => (
+                      <line x1="100" y1={i % 5 === 0 ? 14 : 17} x2="100" y2="22" stroke={i % 5 === 0 ? "rgba(236,230,218,0.6)" : "rgba(236,230,218,0.18)"} stroke-width={i % 5 === 0 ? 1.2 : 0.6} transform={`rotate(${i * 6} 100 100)`} />
+                    ))}
+                    <line id={`min-${who}`} x1="100" y1="100" x2="100" y2="48" stroke="#ece6da" stroke-width="2" stroke-linecap="round" />
+                    <line id={`sec-${who}`} x1="100" y1="112" x2="100" y2="28" stroke={who === "you" ? "#ffb36b" : "#ece6da"} stroke-width="0.8" stroke-linecap="round" />
+                    <circle cx="100" cy="100" r="3" fill={who === "you" ? "#ffb36b" : "#ece6da"} />
+                  </svg>
+                  <div class="eyebrow mt-5 text-[#ece6da]/50">{who === "earth" ? "Clock on Earth" : "Your clock"}</div>
+                  <div class="mt-1 font-mono text-sm tabular-nums text-[#ece6da]" id={`elapsed-${who}`}>00:00:00</div>
+                </div>
+              ))
+            }
+          </div>
+          <div class="relative mt-10 grid w-full max-w-3xl grid-cols-3 gap-4 border-t border-white/10 pt-6 text-center font-mono text-[10px] uppercase tracking-[0.18em] text-[#ece6da]/45">
+            <div><div class="font-display text-3xl normal-case tracking-normal text-[#ece6da]" id="time-r">10.0 rₛ</div>your distance</div>
+            <div><div class="font-display text-3xl normal-case tracking-normal text-[#ffd8ae]" id="time-rate">0.949×</div>your clock rate</div>
+            <div><div class="font-display text-3xl normal-case tracking-normal text-[#ece6da]" id="time-hour">1.05 h</div>pass on Earth per hour</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── 08 SCALE ─────────────────────────────────────────── -->
+      <section id="scale" data-chapter-section="scale" class="relative">
+        <div class="scale-pin relative h-[100svh] overflow-hidden">
+          <div class="absolute left-6 top-28 z-10 md:left-[8vw] md:top-[16vh]">
+            <p class="eyebrow text-[#ffb36b]">Chapter 08 — Scale</p>
+            <h2 data-reveal class="chapter-title mt-5 text-[#ece6da]" style="font-size:clamp(2.6rem,6vw,6.5rem)">From a marble<br /><em>to a solar system.</em></h2>
+          </div>
+          <div id="scale-stage" class="absolute inset-0">
+            {
+              scaleRefs.map((o) => (
+                <div class="scale-obj scale-ref absolute left-1/2 top-1/2 rounded-full border border-dashed border-[#ece6da]/25" data-rs={o.rs}>
+                  <span class="eyebrow absolute left-1/2 top-0 -translate-x-1/2 -translate-y-[160%] whitespace-nowrap text-[0.55rem] text-[#ece6da]/35">{o.name}</span>
+                </div>
+              ))
+            }
+            {
+              scaleObjects.map((o) => (
+                <div class="scale-obj absolute left-1/2 top-1/2 rounded-full bg-black shadow-[0_0_0_1px_rgba(255,179,107,0.65),0_0_40px_6px_rgba(255,140,60,0.35),inset_0_0_30px_rgba(255,140,60,0.15)]" data-rs={o.rs}>
+                  <div class="scale-label pointer-events-none absolute left-full top-1/2 ml-6 w-56 -translate-y-1/2">
+                    <div class="font-display text-3xl italic text-[#ece6da]">{o.name}</div>
+                    <div class="eyebrow mt-1 text-[0.56rem] text-[#ece6da]/45">{o.note}</div>
+                  </div>
+                </div>
+              ))
+            }
+          </div>
+          <div class="absolute bottom-24 left-1/2 z-10 -translate-x-1/2 text-center font-mono text-[10px] uppercase tracking-[0.2em] text-[#ece6da]/45 md:bottom-[12vh]">
+            field of view
+            <div class="mt-2 font-display text-4xl normal-case tracking-normal text-[#ece6da]" id="scale-fov">1 cm</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── 09 POCKET (PhoneScrollHero) ──────────────────────── -->
+      <section id="pocket" data-chapter-section="pocket" class="relative">
+        <PocketSection client:visible />
+      </section>
+
+      <!-- ── 10 DIVE ──────────────────────────────────────────── -->
+      <section id="dive" data-chapter-section="dive" class="relative">
+        <div class="dive-pin relative flex h-[100svh] items-center justify-center overflow-hidden px-6 text-center">
+          <div class="absolute left-1/2 top-24 -translate-x-1/2 md:top-[14vh]">
+            <p class="eyebrow text-[#ffb36b]">Chapter 10 — The Horizon</p>
+          </div>
+          <div class="relative h-[40vh] w-full max-w-5xl">
+            <p class="dive-line font-display absolute inset-0 flex items-center justify-center text-[clamp(2.4rem,6.5vw,6.5rem)] leading-[0.95] text-[#ece6da] opacity-0">There is no wall.</p>
+            <p class="dive-line font-display absolute inset-0 flex items-center justify-center text-[clamp(2.4rem,6.5vw,6.5rem)] leading-[0.95] text-[#ece6da] opacity-0"><span>No warning sign.<br /><em>No sound.</em></span></p>
+            <p class="dive-line font-display absolute inset-0 flex items-center justify-center text-[clamp(2.4rem,6.5vw,6.5rem)] leading-[0.95] text-[#ece6da] opacity-0"><span>The sky shrinks<br /><em>to a circle above you.</em></span></p>
+            <p class="dive-line font-display absolute inset-0 flex items-center justify-center text-[clamp(2.4rem,6.5vw,6.5rem)] leading-[0.95] text-[#ece6da] opacity-0"><span>You cross.</span></p>
+            <p class="dive-line font-display absolute inset-0 flex items-center justify-center text-[clamp(2.4rem,6.5vw,6.5rem)] leading-[0.95] text-[#ece6da]/90 opacity-0"><span><em>Every direction</em><br />is now the future.<br /><span class="text-gradient">And it points inward.</span></span></p>
+          </div>
+          <div class="absolute bottom-24 left-1/2 -translate-x-1/2 font-mono text-[10px] uppercase tracking-[0.25em] text-[#ece6da]/50 md:bottom-[12vh]">
+            distance to horizon
+            <div class="mt-2 font-display text-5xl normal-case tracking-normal text-[#ffd8ae] tabular-nums" id="dive-dist">9.00 rₛ</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── 11 HAWKING ───────────────────────────────────────── -->
+      <section id="hawking" data-chapter-section="hawking" class="relative">
+        <div class="hawking-pin relative flex h-[100svh] items-end justify-center overflow-hidden px-6 pb-[14vh] text-center">
+          <canvas id="hawking-canvas" class="absolute inset-0 h-full w-full"></canvas>
+          <div class="relative max-w-3xl">
+            <p class="eyebrow hawking-in text-[#ffb36b]">Chapter 11 — Evaporation</p>
+            <h2 class="chapter-title hawking-in mt-6 text-[#ece6da]" style="font-size:clamp(2.8rem,7vw,7rem)">Even darkness <em>fades.</em></h2>
+            <p class="lede hawking-in mx-auto mt-8 text-center">
+              Quantum mechanics lets the horizon leak. One particle at a time, a black hole radiates its mass away. After 10<sup>100</sup> years the last one will vanish — in a final flash of light.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── CODA ─────────────────────────────────────────────── -->
+      <footer id="coda" class="relative flex min-h-[100svh] flex-col items-center justify-center px-6 text-center">
+        <p class="eyebrow text-[#030304]/50 coda-in">Fin</p>
+        <h2 class="coda-in font-display mt-6 text-[#030304]" style="font-size: clamp(3.5rem, 12vw, 12rem); line-height: 0.85; letter-spacing: -0.04em;">
+          And then,<br /><em>light.</em>
+        </h2>
+        <button id="restart" data-cursor="again" class="coda-in group mt-14 flex items-center gap-4 rounded-full border border-[#030304]/25 px-7 py-4 transition-colors duration-500 hover:bg-[#030304]">
+          <span class="eyebrow text-[#030304] transition-colors duration-500 group-hover:text-[#ece6da]">Fall again</span>
+          <span class="block h-px w-8 bg-[#030304] transition-all duration-500 group-hover:w-14 group-hover:bg-[#ffb36b]"></span>
+        </button>
+      </footer>
+    </main>
+
+    <script>
+      import "@/scripts/main";
+    </script>
+  </body>
+</html>
